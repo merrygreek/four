@@ -1,5 +1,6 @@
 use calamine::{open_workbook, Reader, Xlsx};
 use eframe::egui;
+use egui::Color32;
 use linked_hash_map::LinkedHashMap;
 use std::collections::HashMap;
 use std::path::PathBuf;
@@ -11,7 +12,7 @@ fn main() -> Result<(), eframe::Error> {
         ..Default::default()
     };
     eframe::run_native(
-        "My parallel egui App",
+        "deng",
         options,
         Box::new(|cc| Box::new(ExamApp::new(data, cc))),
     )
@@ -28,11 +29,15 @@ struct ExamApp {
 
 impl ExamApp {
     fn new(data: LinkedHashMap<String, String>, cc: &eframe::CreationContext) -> Self {
+        let len = data.len();
+        let selected = HashMap::with_capacity(len);
+
+        let correct = HashMap::with_capacity(len);
         setup_custom_fonts(&cc.egui_ctx);
         Self {
             data,
-            selected: HashMap::new(),
-            correct: HashMap::new(),
+            selected,
+            correct,
             font_id: egui::FontId::proportional(18.0),
             option_chars: ['A', 'B', 'C', 'D', 'E', 'F', 'G', 'H'],
             wrong_questions: LinkedHashMap::new(),
@@ -43,15 +48,14 @@ impl ExamApp {
         let mut correct_count = 0;
 
         for (question, correct_answer) in &self.correct {
-            if let Some(selected_answer) = self.selected.get(question) {
-                if selected_answer == correct_answer {
-                    correct_count += 1;
-                } else if !self.wrong_questions.contains_key(question) {
-                    self.wrong_questions.insert(
-                        question.to_owned(),
-                        self.data.get(question).unwrap().to_owned(),
-                    );
+            match self.selected.get(question) {
+                Some(selected_answer) if selected_answer == correct_answer => correct_count += 1,
+                Some(_) => {
+                    self.wrong_questions
+                        .entry(question.to_owned())
+                        .or_insert_with(|| self.data.get(question).unwrap().to_owned());
                 }
+                None => {}
             }
         }
         correct_count
@@ -69,21 +73,25 @@ impl ExamApp {
                         for (index, (question, option_answer)) in self.data.iter().enumerate() {
                             let option_answer_vec: Vec<&str> = option_answer.split('\n').collect();
                             let index_question = format!("{}.{}", index + 1, question);
-                            ui.label(
+                            ui.heading(
                                 egui::RichText::new(index_question).font(self.font_id.clone()),
                             );
                             let option_count = option_answer_vec.len() - 1;
-                            for i in 0..option_count {
+                            let correct = option_answer_vec.last().expect("Last should exsit");
+                            self.correct
+                                .entry(question.to_owned())
+                                .or_insert_with(|| correct.to_string());
+                            for (i, _) in option_answer_vec.iter().enumerate().take(option_count) {
                                 let option =
                                     format!("{}. {}", self.option_chars[i], option_answer_vec[i]);
-                                let is_selected =
+                                let mut is_selected =
                                     self.selected.get(question).map_or(false, |selected| {
                                         selected == &self.option_chars[i].to_string()
                                     });
 
                                 if ui
-                                    .radio(
-                                        is_selected,
+                                    .checkbox(
+                                        &mut is_selected,
                                         egui::RichText::new(option).font(self.font_id.clone()),
                                     )
                                     .clicked()
@@ -95,13 +103,17 @@ impl ExamApp {
                                 }
                             }
 
+                            ui.group(|ui| {
+                                ui.set_visible(match self.selected.get(question) {
+                                    None => false,
+                                    Some(i) => i != self.correct.get(question).unwrap(),
+                                });
+                                ui.label(
+                                    egui::RichText::new(self.correct.get(question).unwrap())
+                                        .color(Color32::RED),
+                                );
+                            });
                             ui.separator();
-                            ui.end_row();
-
-                            let correct = option_answer_vec.last().expect("Last should exsit");
-                            self.correct
-                                .entry(question.to_owned())
-                                .or_insert_with(|| correct.to_string());
                         }
                     });
                 });
@@ -130,7 +142,8 @@ impl ExamApp {
                             ui.label(
                                 egui::RichText::new(index_question).font(self.font_id.clone()),
                             );
-                            for i in 0..option_answer_vec.len() - 1 {
+                            let option_count = option_answer_vec.len() - 1;
+                            for (i, _) in option_answer_vec.iter().enumerate().take(option_count) {
                                 let option =
                                     format!("{}. {}", self.option_chars[i], option_answer_vec[i]);
                                 let is_selected =
@@ -184,13 +197,10 @@ fn read_xlsx_file(file_path: &str) -> LinkedHashMap<String, String> {
         .rows()
         .skip(1)
         .map(|row| {
-            let mut non_empty_cells = vec![];
-            for cell in row.iter() {
-                if !cell.is_empty() {
-                    non_empty_cells.push(cell.clone());
-                }
-            }
-
+            let non_empty_cells = row
+                .iter()
+                .filter(|cell| !cell.is_empty())
+                .collect::<Vec<_>>();
             let options = non_empty_cells
                 .iter()
                 .skip(1)
