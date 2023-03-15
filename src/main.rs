@@ -6,7 +6,7 @@ use std::collections::HashMap;
 use std::path::PathBuf;
 
 fn main() -> Result<(), eframe::Error> {
-    let data = read_xlsx_file("/home/deng/Desktop/rust/learn/four/src/7.xlsx");
+    let data = read_xlsx_file("/home/deng/Desktop/rust/learn/four/src/10.xlsx");
     let options = eframe::NativeOptions {
         initial_window_size: Some(egui::vec2(1600.0, 768.0)),
         ..Default::default()
@@ -25,6 +25,10 @@ struct ExamApp {
     font_id: egui::FontId,
     option_chars: [char; 8],
     wrong_questions: LinkedHashMap<String, String>,
+    multi_choose: HashMap<String, Vec<bool>>,
+    mapping: Vec<(char, bool)>,
+    multi_correct: HashMap<String, Vec<bool>>,
+    visible: HashMap<String, bool>,
 }
 
 impl ExamApp {
@@ -41,6 +45,19 @@ impl ExamApp {
             font_id: egui::FontId::proportional(18.0),
             option_chars: ['A', 'B', 'C', 'D', 'E', 'F', 'G', 'H'],
             wrong_questions: LinkedHashMap::new(),
+            multi_choose: HashMap::new(),
+            multi_correct: HashMap::new(),
+            mapping: vec![
+                ('A', true),
+                ('B', true),
+                ('C', true),
+                ('D', true),
+                ('E', true),
+                ('F', true),
+                ('G', true),
+                ('H', true),
+            ],
+            visible: HashMap::new(),
         }
     }
 
@@ -81,38 +98,111 @@ impl ExamApp {
                             self.correct
                                 .entry(question.to_owned())
                                 .or_insert_with(|| correct.to_string());
-                            for (i, _) in option_answer_vec.iter().enumerate().take(option_count) {
-                                let option =
-                                    format!("{}. {}", self.option_chars[i], option_answer_vec[i]);
-                                let mut is_selected =
-                                    self.selected.get(question).map_or(false, |selected| {
-                                        selected == &self.option_chars[i].to_string()
-                                    });
-
-                                if ui
-                                    .checkbox(
-                                        &mut is_selected,
-                                        egui::RichText::new(option).font(self.font_id.clone()),
-                                    )
-                                    .clicked()
+                            if correct.chars().count() == 1 {
+                                for (i, _) in
+                                    option_answer_vec.iter().enumerate().take(option_count)
                                 {
-                                    self.selected.insert(
-                                        question.to_owned(),
-                                        self.option_chars[i].to_string(),
+                                    let option = format!(
+                                        "{}. {}",
+                                        self.option_chars[i], option_answer_vec[i]
                                     );
+                                    let is_selected =
+                                        self.selected.get(question).map_or(false, |selected| {
+                                            selected == &self.option_chars[i].to_string()
+                                        });
+
+                                    if ui
+                                        .radio(
+                                            is_selected,
+                                            egui::RichText::new(option).font(self.font_id.clone()),
+                                        )
+                                        .clicked()
+                                    {
+                                        self.selected.insert(
+                                            question.to_owned(),
+                                            self.option_chars[i].to_string(),
+                                        );
+                                    }
                                 }
+                                ui.group(|ui| {
+                                    let visible = !matches!(self.selected.get(question), None);
+                                    ui.set_visible(visible);
+                                    if visible
+                                        && self.selected.get(question).unwrap()
+                                            != self.correct.get(question).unwrap()
+                                    {
+                                        ui.label(
+                                            egui::RichText::new(
+                                                self.correct.get(question).unwrap(),
+                                            )
+                                            .color(Color32::RED),
+                                        );
+                                    } else {
+                                        ui.label(egui::RichText::new("✔").color(Color32::GREEN));
+                                    }
+                                });
+                            } else {
+                                let result: Vec<bool> = correct
+                                    .chars()
+                                    .map(|c| match self.mapping.iter().find(|(x, _)| *x == c) {
+                                        Some((_, b)) => *b,
+                                        None => false,
+                                    })
+                                    .collect();
+                                let len = result.len();
+                                self.multi_correct.insert(question.to_owned(), result);
+                                let choose = vec![false; len];
+                                self.multi_choose
+                                    .entry(question.to_owned())
+                                    .or_insert(choose);
+                                self.visible.entry(question.to_owned()).or_insert(false);
+
+                                for (i, _) in
+                                    option_answer_vec.iter().enumerate().take(option_count)
+                                {
+                                    let option = format!(
+                                        "{}. {}",
+                                        self.option_chars[i], option_answer_vec[i]
+                                    );
+
+                                    // let mut is_selected = self
+                                    //     .multi_choose
+                                    //     .get(question)
+                                    //     .map_or(choose.clone(), |selected| selected.to_owned());
+
+                                    if ui
+                                        .checkbox(
+                                            &mut self.multi_choose.get_mut(question).unwrap()[i],
+                                            egui::RichText::new(option).font(self.font_id.clone()),
+                                        )
+                                        .clicked()
+                                    {
+                                        println!("hi");
+                                    }
+                                }
+                                if ui.button("sumit").clicked() {
+                                    *self.visible.get_mut(question).unwrap() =
+                                        !matches!(self.multi_choose.get(question), None);
+                                }
+                                ui.group(|ui| {
+                                    let visible = *self.visible.get(question).unwrap();
+                                    ui.set_visible(visible);
+                                    if visible
+                                        && self.multi_choose.get(question).unwrap()
+                                            != self.multi_correct.get(question).unwrap()
+                                    {
+                                        ui.label(
+                                            egui::RichText::new(
+                                                self.correct.get(question).unwrap(),
+                                            )
+                                            .color(Color32::RED),
+                                        );
+                                    } else {
+                                        ui.label(egui::RichText::new("✔").color(Color32::GREEN));
+                                    }
+                                });
                             }
 
-                            ui.group(|ui| {
-                                ui.set_visible(match self.selected.get(question) {
-                                    None => false,
-                                    Some(i) => i != self.correct.get(question).unwrap(),
-                                });
-                                ui.label(
-                                    egui::RichText::new(self.correct.get(question).unwrap())
-                                        .color(Color32::RED),
-                                );
-                            });
                             ui.separator();
                         }
                     });
