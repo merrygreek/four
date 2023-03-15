@@ -80,7 +80,10 @@ impl ExamApp {
 
     fn show(&mut self, ctx: &egui::Context) {
         egui::CentralPanel::default().show(ctx, |ui| {
-            egui::introspection::font_id_ui(ui, &mut self.font_id);
+            ui.horizontal(|ui| {
+                egui::introspection::font_id_ui(ui, &mut self.font_id);
+                egui::global_dark_light_mode_switch(ui);
+            });
             egui::SidePanel::left("Test")
                 .resizable(true)
                 .default_width(800.0)
