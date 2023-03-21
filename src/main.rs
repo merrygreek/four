@@ -6,7 +6,7 @@ use std::collections::HashMap;
 use std::path::PathBuf;
 
 fn main() -> Result<(), eframe::Error> {
-    let data = read_xlsx_file("/home/deng/Desktop/rust/learn/four/src/10.xlsx");
+    let data = read_xlsx_file("/home/deng/Desktop/rust/learn/four/src/9.xlsx");
     let options = eframe::NativeOptions {
         initial_window_size: Some(egui::vec2(1600.0, 768.0)),
         ..Default::default()
@@ -29,6 +29,8 @@ struct ExamApp {
     mapping: Vec<(char, bool)>,
     multi_correct: HashMap<String, Vec<bool>>,
     visible: HashMap<String, bool>,
+    page_num: usize,
+    top: bool,
 }
 
 impl ExamApp {
@@ -58,6 +60,8 @@ impl ExamApp {
                 ('H', true),
             ],
             visible: HashMap::new(),
+            page_num: 0,
+            top: false,
         }
     }
 
@@ -83,6 +87,11 @@ impl ExamApp {
             ui.horizontal(|ui| {
                 egui::introspection::font_id_ui(ui, &mut self.font_id);
                 egui::global_dark_light_mode_switch(ui);
+                if ui.button("next").clicked() {
+                    self.page_num += 50;
+                    ui.scroll_to_cursor(Some(egui::Align::TOP))
+                }
+                self.top = ui.button("top").clicked();
             });
             egui::SidePanel::left("Test")
                 .resizable(true)
@@ -90,7 +99,12 @@ impl ExamApp {
                 .width_range(80.0..=1000.0)
                 .show_inside(ui, |ui| {
                     egui::ScrollArea::vertical().show(ui, |ui| {
-                        for (index, (question, option_answer)) in self.data.iter().enumerate() {
+                        if self.top {
+                            ui.scroll_to_cursor(Some(egui::Align::TOP))
+                        }
+                        for (index, (question, option_answer)) in
+                            self.data.iter().skip(self.page_num).take(50).enumerate()
+                        {
                             let option_answer_vec: Vec<&str> = option_answer.split('\n').collect();
                             let index_question = format!("{}.{}", index + 1, question);
                             ui.heading(
@@ -208,7 +222,7 @@ impl ExamApp {
 
                             ui.separator();
                         }
-                    });
+                    })
                 });
             egui::SidePanel::right("Wrong")
                 .resizable(true)
